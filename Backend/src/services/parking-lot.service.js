@@ -1,32 +1,59 @@
-const { getRealtimeDatabase } = require('../configs/firebase-realtime.config')
-const { CHECK_USER_AMOUNT, MIN_AMOUNT, PARKING_LOT } = require('../constants/parking-lot.constants')
+const { getFirestoreDatabase } = require('../configs/firebase.config')
+const { CHECK_USER_AMOUNT, MIN_AMOUNT, PARKING_LOT, CHECK_USER_CARD } = require('../constants/parking-lot.constants')
 const { USER } = require('../constants/user.constants')
 
-const addUser = async (userId, userData) => {
+const db = getFirestoreDatabase()
+
+const addParkingLot = async (parkingLotId) => {
   try {
-    const userRef = getRealtimeDatabase().ref(`users/${userId}`)
-    await userRef.set(userData)
+    const parkingLotDoc = await db.collection('parking').doc(parkingLotId).get()
+    if (parkingLotDoc.exists) {
+      return {
+        success: false,
+        message: PARKING_LOT.ALREADY_EXISTS
+      }
+    }
+
+    await db.collection('parking').doc(parkingLotId).set({
+      id: parkingLotId,
+      status: 0,
+      start: null,
+      parkingUser: null
+    })
+
     return {
       success: true,
-      message: 'User added successfully',
+      message: PARKING_LOT.CREATED_SUCCESSFUL,
+      parkingLotId: parkingLotId
     }
   } catch (error) {
-    throw new Error(`Error adding user: ${error.message}`)
+    throw new Error(`Error adding parking lot: ${error.message}`)
   }
 }
 
-const checkUserAmount = async (userId) => {
+const checkUserAmount = async (cardId) => {
   try {
-    const userRef = getRealtimeDatabase().ref(`users/${userId}`)
-    const snapshot = await userRef.once('value')
-    const userData = snapshot.val()
-    if (!userData) {
+    // Check if card exists
+    const cardDoc = await db.collection('cards').doc(cardId).get()
+    if (!cardDoc.exists) {
+      return {
+        success: false,
+        message: CHECK_USER_CARD.NOT_EXIST,
+      }
+    }
+    // Get userId from card
+    const cardData = cardDoc.data()
+    const userId = cardData.userId
+
+    const userDoc = await db.collection('users').doc(userId).get()
+    if (!userDoc.exists) {
       return {
         success: false,
         message: USER.NOT_FOUND,
       }
     }
 
+    const userData = userDoc.data()
     if (userData.amount < MIN_AMOUNT) {
       return {
         success: false,
@@ -38,7 +65,8 @@ const checkUserAmount = async (userId) => {
     return {
       success: true,
       message: CHECK_USER_AMOUNT.SUFFICIENT,
-      currentAmount: userData.amount
+      currentAmount: userData.amount,
+      userId: userId,
     }
 
   } catch (error) {
@@ -48,96 +76,116 @@ const checkUserAmount = async (userId) => {
 
 const checkInParkingLot = async (userId, parkingLotId) => {
   try {
-    const userRef = getRealtimeDatabase().ref(`users/${userId}`)
-    const parkingLotRef = getRealtimeDatabase().ref(`parkingLots/${parkingLotId}`)
-    const userSnapshot = await userRef.once('value')
-    const parkingLotSnapshot = await parkingLotRef.once('value')
-    const userData = userSnapshot.val()
-    const parkingLotData = parkingLotSnapshot.val()
+    const result = await db.runTransaction(async (transaction) => {
+      const userDoc = await transaction.get(db.collection('users').doc(userId))
+      const parkingLotDoc = await transaction.get(db.collection('parking').doc(parkingLotId))
 
-    if (!userData) {
-      return {
-        success: false,
-        message: USER.NOT_FOUND,
+      if (!userDoc.exists) {
+        return {
+          success: false,
+          message: USER.NOT_FOUND,
+        }
       }
-    }
-    if (!parkingLotData) {
-      return {
-        success: false,
-        message: PARKING_LOT.NOT_FOUND,
+      if (!parkingLotDoc.exists) {
+        return {
+          success: false,
+          message: PARKING_LOT.NOT_FOUND,
+        }
       }
-    }
 
-    if (parkingLotData.status == 1) {
-      return {
-        success: false,
-        message: PARKING_LOT.ALREADY_OCCUPIED,
+      const parkingLotData = parkingLotDoc.data()
+      if (parkingLotData.status === 1) {
+        return {
+          success: false,
+          message: PARKING_LOT.ALREADY_OCCUPIED,
+        }
       }
-    }
 
-    const startTimestamp = new Date()
-    await parkingLotRef.update({
-      status: 1,
-      start: startTimestamp,
-      parkingUser: userId,
+      const startTimestamp = admin.firestore.Timestamp.now()
+      transaction.update(db.collection('parking').doc(parkingLotId), {
+        status: 1,
+        start: startTimestamp,
+        parkingUser: userId,
+      })
+
+      return {
+        success: true,
+        message: PARKING_LOT.PARKING_SUCCESSFUL,
+        parkingLot: parkingLotId,
+      }
     })
 
-    return {
-      success: true,
-      message: PARKING_LOT.PARKING_SUCCESSFUL,
-      parkingLot: parkingLotId,
-    }
+    return result
   } catch (error) {
     throw new Error(`Error in processing check in: ${error.message}`)
   }
 }
 
-const checkOutParkingLot = async (userId, parkingLotId) => {
+const checkOutParkingLot = async (cardId, parkingLotId) => {
   try {
-    const userRef = getRealtimeDatabase().ref(`users/${userId}`)
-    const parkingLotRef = getRealtimeDatabase().ref(`parkingLots/${parkingLotId}`)
-    const userSnapshot = await userRef.once('value')
-    const parkingLotSnapshot = await parkingLotRef.once('value')
-    const userData = userSnapshot.val()
-    const parkingLotData = parkingLotSnapshot.val()
+    // Check if card exists
+    const cardDoc = await db.collection('cards').doc(cardId).get()
+    if (!cardDoc.exists) {
+      return {
+        success: false,
+        message: CHECK_USER_CARD.NOT_EXIST
+      }
+    }
+    // Get userId from card
+    const cardData = cardDoc.data()
+    const userId = cardData.userId
 
-    if (!userData) {
+    const batch = db.batch()
+    
+    const userDoc = await db.collection('users').doc(userId).get()
+    const parkingLotDoc = await db.collection('parking').doc(parkingLotId).get()
+
+    if (!userDoc.exists) {
       return {
         success: false,
         message: USER.NOT_FOUND,
       }
     }
-    if (!parkingLotData) {
+    if (!parkingLotDoc.exists) {
       return {
         success: false,
         message: PARKING_LOT.NOT_FOUND,
       }
     }
 
-    const userHistory = userData.history
+    const userData = userDoc.data()
+    const parkingLotData = parkingLotDoc.data()
+    const userHistory = userData.history || []
+    
     userHistory.push({
       checkin: parkingLotData.start,
-      checkout: new Date(),
+      checkout: admin.firestore.Timestamp.now(),
       payment: 3000,
     })
 
-    await userRef.update({
-      amount: userData.amount - 3000,
+    // Update user document
+    const userRef = db.collection('users').doc(userId)
+    batch.update(userRef, {
+      amount: admin.firestore.FieldValue.increment(-3000),
       history: userHistory,
     })
 
-    await parkingLotRef.update({
+    // Update parking lot document
+    const parkingLotRef = db.collection('parking').doc(parkingLotId)
+    batch.update(parkingLotRef, {
       status: 0,
       start: null,
       parkingUser: null,
     })
+
+    await batch.commit()
 
     return {
       success: true,
       message: PARKING_LOT.CHECKOUT_SUCCESFUL,
     }
   } catch (error) {
-    throw new Error(`Error in processing check in: ${error.message}`)
+    throw new Error(`Error in processing check out: ${error.message}`)
   } 
 }
 
@@ -145,5 +193,5 @@ module.exports = {
   checkUserAmount,
   checkInParkingLot,
   checkOutParkingLot,
-  addUser,
+  addParkingLot,
 }

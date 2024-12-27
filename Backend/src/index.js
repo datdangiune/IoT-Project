@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { PORT } = require('./configs/config');
-const { connectRealtimeDatabase } = require('./configs/firebase-realtime.config');
+const { connectFirestoreDatabase } = require('./configs/firebase.config');
 const errorHandler = require('./middlewares/error-handler.middlewares');
 const corsConfig = require('./configs/cors.config');
 
@@ -10,7 +10,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors(corsConfig));
 
-connectRealtimeDatabase();
+connectFirestoreDatabase();
 
 app.use('/api', require('./routes'));
 

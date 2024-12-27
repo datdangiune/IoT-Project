@@ -1,9 +1,9 @@
 const admin = require('firebase-admin')
 const ENV = require('./config')
 
-let REALTIME_DB
+let FIRESTORE_DB
 
-const connectRealtimeDatabase = () => {
+const connectFirestoreDatabase = () => {
   admin.initializeApp({
     credential: admin.credential.cert({
       type: ENV.FIREBASE_TYPE,
@@ -18,22 +18,21 @@ const connectRealtimeDatabase = () => {
       client_x509_cert_url: ENV.FIREBASE_CLIENT_CERT_URL,
       universe_domain: ENV.FIREBASE_UNIVERSAL_DOMAIN
     }),
-    databaseURL: ENV.FIREBASE_REALTIME_DATABASE_URL,
   })
 
-  REALTIME_DB = admin.database()
+  FIRESTORE_DB = admin.firestore()
 
-  console.log("Connected to Firebase Realtime Database")
+  console.log("Connected to Firebase Firestore Database")
 }
 
-const getRealtimeDatabase = () => {
-  if (!REALTIME_DB) {
+const getFirestoreDatabase = () => {
+  if (!FIRESTORE_DB) {
     throw new Error("No database to connect!")
   }
-  return REALTIME_DB
+  return FIRESTORE_DB
 }
 
 module.exports = {
-  connectRealtimeDatabase,
-  getRealtimeDatabase
+  connectFirestoreDatabase,
+  getFirestoreDatabase
 }
