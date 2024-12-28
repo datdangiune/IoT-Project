@@ -30,6 +30,28 @@ const addParkingLot = async (parkingLotId) => {
   }
 }
 
+const getSlotStatus = async () => {
+  try {
+    const parkingQuery = await db.collection('parking').get()
+    const slots = []
+    
+    parkingQuery.forEach(doc => {
+      const data = doc.data()
+      slots.push({
+        id: data.id,
+        status: data.status,
+      })
+    })
+
+    return {
+      success: true,
+      slots: slots
+    }
+  } catch (error) {
+    throw new Error(`Error getting slot status: ${error.message}`)
+  }
+}
+
 const getTotalAvailableParkingLot = async () => {
   try {
     const parkingQuery = await db.collection('parking').where('status', '==', 0).get()
@@ -266,6 +288,7 @@ const exitParking = async (cardId) => {
 
 module.exports = {
   addParkingLot,
+  getSlotStatus,
   getTotalAvailableParkingLot,
   checkUserAmount,
   entryParking,

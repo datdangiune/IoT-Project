@@ -5,6 +5,11 @@ const addParkingLot = async (req, res, next) => {
   res.status(200).json(newParkingLot)
 }
 
+const getSlotStatus = async (req, res, next) => {
+  const slotStatus = await parkingLotService.getSlotStatus()
+  res.status(200).json(slotStatus)
+}
+
 const getTotalAvailableParkingLot = async (req, res, next) => {
   const totalAvailableParkingLot = await parkingLotService.getTotalAvailableParkingLot()
   res.status(200).json(totalAvailableParkingLot)
@@ -37,6 +42,7 @@ const exitParking = async (req, res, next) => {
 
 module.exports = {
   addParkingLot,
+  getSlotStatus,
   getTotalAvailableParkingLot,
   checkUserAmount,
   entryParking,
