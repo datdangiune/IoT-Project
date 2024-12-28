@@ -1,3 +1,4 @@
+const admin = require('firebase-admin')
 const { getFirestoreDatabase } = require('../configs/firebase.config')
 const { CHECK_USER_AMOUNT, MIN_AMOUNT, PARKING_LOT, CHECK_USER_CARD } = require('../constants/parking-lot.constants')
 const { USER } = require('../constants/user.constants')
@@ -17,8 +18,6 @@ const addParkingLot = async (parkingLotId) => {
     await db.collection('parking').doc(parkingLotId).set({
       id: parkingLotId,
       status: 0,
-      start: null,
-      parkingUser: null
     })
 
     return {
@@ -28,6 +27,20 @@ const addParkingLot = async (parkingLotId) => {
     }
   } catch (error) {
     throw new Error(`Error adding parking lot: ${error.message}`)
+  }
+}
+
+const getTotalAvailableParkingLot = async () => {
+  try {
+    const parkingQuery = await db.collection('parking').where('status', '==', 0).get()
+    const availableLots = parkingQuery.size
+
+    return {
+      success: true,
+      availableLots: availableLots
+    }
+  } catch (error) {
+    throw new Error(`Error getting total available parking lot: ${error.message}`)
   }
 }
 
@@ -74,18 +87,61 @@ const checkUserAmount = async (cardId) => {
   }
 }
 
-const checkInParkingLot = async (userId, parkingLotId) => {
+const entryParking = async (cardId) => {
+  try {
+    // Check if card exists
+    const cardDoc = await db.collection('cards').doc(cardId).get()
+    if (!cardDoc.exists) {
+      return {
+        success: false,
+        message: CHECK_USER_CARD.NOT_EXIST
+      }
+    }
+
+    // Get userId from card
+    const userId = cardDoc.data().userId
+    const userDoc = await db.collection('users').doc(userId).get()
+    
+    if (!userDoc.exists) {
+      return {
+        success: false,
+        message: USER.NOT_FOUND
+      }
+    }
+
+    // Create new history object
+    const startTimestamp = new Date()
+    const newHistory = {
+      checkin: startTimestamp,
+      checkout: null,
+      payment: 0,
+    }
+
+    // Get current history array or initialize if doesn't exist
+    const userData = userDoc.data()
+    const currentHistory = userData.history || []
+    
+    // Update user document with new history
+    await db.collection('users').doc(userId).update({
+      history: [...currentHistory, newHistory]
+    })
+
+    return {
+      success: true,
+      history: newHistory,
+      userId: userId
+    }
+  } catch (error) {
+    throw new Error(`Error in processing entry: ${error.message}`)
+  }
+}
+
+
+const checkInParkingLot = async (parkingLotId) => {
   try {
     const result = await db.runTransaction(async (transaction) => {
-      const userDoc = await transaction.get(db.collection('users').doc(userId))
       const parkingLotDoc = await transaction.get(db.collection('parking').doc(parkingLotId))
 
-      if (!userDoc.exists) {
-        return {
-          success: false,
-          message: USER.NOT_FOUND,
-        }
-      }
       if (!parkingLotDoc.exists) {
         return {
           success: false,
@@ -100,18 +156,21 @@ const checkInParkingLot = async (userId, parkingLotId) => {
           message: PARKING_LOT.ALREADY_OCCUPIED,
         }
       }
-
-      const startTimestamp = admin.firestore.Timestamp.now()
+      
+      // Update parking lot status
       transaction.update(db.collection('parking').doc(parkingLotId), {
         status: 1,
-        start: startTimestamp,
-        parkingUser: userId,
       })
+
+      // Get total available parking lots
+      const parkingQuery = await db.collection('parking').where('status', '==', 0).get()
+      const availableLots = parkingQuery.size
 
       return {
         success: true,
         message: PARKING_LOT.PARKING_SUCCESSFUL,
         parkingLot: parkingLotId,
+        availableLots: availableLots
       }
     })
 
@@ -121,9 +180,45 @@ const checkInParkingLot = async (userId, parkingLotId) => {
   }
 }
 
-const checkOutParkingLot = async (cardId, parkingLotId) => {
+const checkOutParkingLot = async (parkingLotId) => {
   try {
-    // Check if card exists
+    const parkingLotDoc = await db.collection('parking').doc(parkingLotId).get()
+    
+    if (!parkingLotDoc.exists) {
+      return {
+        success: false,
+        message: PARKING_LOT.NOT_FOUND
+      }
+    }
+
+    const parkingLotData = parkingLotDoc.data()
+    if (parkingLotData.status === 0) {
+      return {
+        success: false,
+        message: PARKING_LOT.INVALID_CHECKOUT
+      }
+    }
+
+    await db.collection('parking').doc(parkingLotId).update({
+      status: 0,
+    })
+
+    // Get total available parking lots
+    const parkingQuery = await db.collection('parking').where('status', '==', 0).get()
+    const availableLots = parkingQuery.size
+
+    return {
+      success: true,
+      message: PARKING_LOT.CHECKOUT_SUCCESFUL,
+      availableLots: availableLots
+    }
+  } catch (error) {
+    throw new Error(`Error in processing check out: ${error.message}`)
+  }
+}
+
+const exitParking = async (cardId) => {
+  try {
     const cardDoc = await db.collection('cards').doc(cardId).get()
     if (!cardDoc.exists) {
       return {
@@ -131,67 +226,50 @@ const checkOutParkingLot = async (cardId, parkingLotId) => {
         message: CHECK_USER_CARD.NOT_EXIST
       }
     }
-    // Get userId from card
-    const cardData = cardDoc.data()
-    const userId = cardData.userId
 
-    const batch = db.batch()
-    
+    const userId = cardDoc.data().userId
     const userDoc = await db.collection('users').doc(userId).get()
-    const parkingLotDoc = await db.collection('parking').doc(parkingLotId).get()
-
-    if (!userDoc.exists) {
-      return {
-        success: false,
-        message: USER.NOT_FOUND,
-      }
-    }
-    if (!parkingLotDoc.exists) {
-      return {
-        success: false,
-        message: PARKING_LOT.NOT_FOUND,
-      }
-    }
-
     const userData = userDoc.data()
-    const parkingLotData = parkingLotDoc.data()
-    const userHistory = userData.history || []
     
-    userHistory.push({
-      checkin: parkingLotData.start,
-      checkout: admin.firestore.Timestamp.now(),
-      payment: 3000,
-    })
+    if (!userData.history || userData.history.length === 0) {
+      return {
+        success: false,
+        message: USER.NO_HISTORY_FOUND,
+      }
+    }
+
+    // Get and update last history entry
+    const lastHistory = userData.history[userData.history.length - 1]
+    const updatedHistory = {
+      ...lastHistory,
+      checkout: new Date(),
+      payment: 3000
+    }
+
+    // Update history array
+    userData.history[userData.history.length - 1] = updatedHistory
 
     // Update user document
-    const userRef = db.collection('users').doc(userId)
-    batch.update(userRef, {
-      amount: admin.firestore.FieldValue.increment(-3000),
-      history: userHistory,
+    await db.collection('users').doc(userId).update({
+      history: userData.history,
+      amount: admin.firestore.FieldValue.increment(-3000)
     })
-
-    // Update parking lot document
-    const parkingLotRef = db.collection('parking').doc(parkingLotId)
-    batch.update(parkingLotRef, {
-      status: 0,
-      start: null,
-      parkingUser: null,
-    })
-
-    await batch.commit()
 
     return {
       success: true,
-      message: PARKING_LOT.CHECKOUT_SUCCESFUL,
+      history: updatedHistory
     }
   } catch (error) {
-    throw new Error(`Error in processing check out: ${error.message}`)
-  } 
+    throw new Error(`Error in processing exit: ${error.message}`)
+  }
 }
 
 module.exports = {
+  addParkingLot,
+  getTotalAvailableParkingLot,
   checkUserAmount,
+  entryParking,
   checkInParkingLot,
   checkOutParkingLot,
-  addParkingLot,
+  exitParking,
 }
