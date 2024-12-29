@@ -1,5 +1,10 @@
 const parkingLotService = require('../services/parking-lot.service')
 
+const addUserAndCard = async (req, res, next) => {
+  const newUserAndCard = await parkingLotService.addUserAndCard(req.body.userId, req.body.cardId)
+  res.status(200).json(newUserAndCard)
+}
+
 const addParkingLot = async (req, res, next) => {
   const newParkingLot = await parkingLotService.addParkingLot(req.params.parkingLotId)
   res.status(200).json(newParkingLot)
@@ -41,6 +46,7 @@ const exitParking = async (req, res, next) => {
 }
 
 module.exports = {
+  addUserAndCard,
   addParkingLot,
   getSlotStatus,
   getTotalAvailableParkingLot,

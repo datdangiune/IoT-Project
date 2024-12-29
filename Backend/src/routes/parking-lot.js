@@ -3,6 +3,7 @@ const asyncHandler = require('../middlewares/async-handler.middleware')
 const parkingLotController = require('../controllers/parking-lot.controller')
 const router = express.Router()
 
+router.post('/add-user-and-card', asyncHandler(parkingLotController.addUserAndCard))
 router.post('/add-parking-lot/:parkingLotId', asyncHandler(parkingLotController.addParkingLot))
 router.get('/slot-status', asyncHandler(parkingLotController.getSlotStatus))
 router.get('/total-parking-lot', asyncHandler(parkingLotController.getTotalAvailableParkingLot))
