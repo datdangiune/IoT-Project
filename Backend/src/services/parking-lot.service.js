@@ -4,6 +4,47 @@ const { CHECK_USER_AMOUNT, MIN_AMOUNT, PARKING_LOT, CHECK_USER_CARD } = require(
 const { USER } = require('../constants/user.constants')
 
 const db = getFirestoreDatabase()
+let previousTotal = 2
+let currentTotal = 2
+
+const addUserAndCard = async (userId, cardId) => {
+  try {
+    const userDoc = await db.collection('users').doc(userId).get()
+    if (userDoc.exists) {
+      return {
+        success: false,
+        message: USER.ALREADY_EXIST,
+      }
+    }
+    const cardDoc = await db.collection('cards').doc(cardId).get()
+    if (cardDoc.exists) {
+      return {
+        success: false,
+        message: USER.USER_CARD_ALREADY_EXIST,
+      }
+    }
+
+    const newCardDoc = await db.collection('cards').doc(cardId).set({
+      cardId: cardId,
+      userId: userId,
+    })
+    const newUserDoc = await db.collection('users').doc(userId).set({
+      username: userId,
+      password: '123',
+      amount: 500000,
+      history: []
+    })
+
+    return {
+      success: true,
+      message: USER.CREATED_SUCCESSFUL,
+      newCard: newCardDoc,
+      newUser: newUserDoc,
+    }
+  } catch (error) {
+    throw new Error(`Error adding user and card: ${error.message}`)
+  }
+}
 
 const addParkingLot = async (parkingLotId) => {
   try {
@@ -34,7 +75,7 @@ const getSlotStatus = async () => {
   try {
     const parkingQuery = await db.collection('parking').get()
     const slots = []
-    
+
     parkingQuery.forEach(doc => {
       const data = doc.data()
       slots.push({
@@ -123,11 +164,25 @@ const entryParking = async (cardId) => {
     // Get userId from card
     const userId = cardDoc.data().userId
     const userDoc = await db.collection('users').doc(userId).get()
-    
+
     if (!userDoc.exists) {
       return {
         success: false,
         message: USER.NOT_FOUND
+      }
+    }
+
+    // Get current history array or initialize if doesn't exist
+    const userData = userDoc.data()
+    const currentHistory = userData.history || []
+
+    if (currentHistory.length !== 0) {
+      const lastHistory = currentHistory[currentHistory.length - 1]
+      if (!lastHistory.checkout) {
+        return {
+          success: false,
+          message: PARKING_LOT.INVALID_ENTRY,
+        }
       }
     }
 
@@ -138,11 +193,6 @@ const entryParking = async (cardId) => {
       checkout: null,
       payment: 0,
     }
-
-    // Get current history array or initialize if doesn't exist
-    const userData = userDoc.data()
-    const currentHistory = userData.history || []
-    
     // Update user document with new history
     await db.collection('users').doc(userId).update({
       history: [...currentHistory, newHistory]
@@ -180,7 +230,9 @@ const checkInParkingLot = async (parkingLotId) => {
       }
       
       // Update parking lot status
-      transaction.update(db.collection('parking').doc(parkingLotId), {
+      previousTotal = currentTotal
+      currentTotal -= 1
+      await transaction.update(db.collection('parking').doc(parkingLotId), {
         status: 1,
       })
 
@@ -205,7 +257,7 @@ const checkInParkingLot = async (parkingLotId) => {
 const checkOutParkingLot = async (parkingLotId) => {
   try {
     const parkingLotDoc = await db.collection('parking').doc(parkingLotId).get()
-    
+
     if (!parkingLotDoc.exists) {
       return {
         success: false,
@@ -221,6 +273,8 @@ const checkOutParkingLot = async (parkingLotId) => {
       }
     }
 
+    previousTotal = currentTotal
+    currentTotal += 1
     await db.collection('parking').doc(parkingLotId).update({
       status: 0,
     })
@@ -252,7 +306,7 @@ const exitParking = async (cardId) => {
     const userId = cardDoc.data().userId
     const userDoc = await db.collection('users').doc(userId).get()
     const userData = userDoc.data()
-    
+
     if (!userData.history || userData.history.length === 0) {
       return {
         success: false,
@@ -260,14 +314,27 @@ const exitParking = async (cardId) => {
       }
     }
 
+    // Add check for invalid exit
+    if (currentTotal <= previousTotal) {
+      return {
+        success: false,
+        message: PARKING_LOT.CAN_NOT_EXIT
+      }
+    }
+
     // Get and update last history entry
     const lastHistory = userData.history[userData.history.length - 1]
+    if (lastHistory.checkout) {
+      return {
+        success: false,
+        message: PARKING_LOT.INVALID_EXIT,
+      }
+    }
     const updatedHistory = {
       ...lastHistory,
       checkout: new Date(),
       payment: 3000
     }
-
     // Update history array
     userData.history[userData.history.length - 1] = updatedHistory
 
@@ -287,6 +354,7 @@ const exitParking = async (cardId) => {
 }
 
 module.exports = {
+  addUserAndCard,
   addParkingLot,
   getSlotStatus,
   getTotalAvailableParkingLot,
