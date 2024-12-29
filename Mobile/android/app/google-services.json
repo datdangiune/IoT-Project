@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "731452417060",
+    "firebase_url": "https://iot-smart-parking-lot-51ec8-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "iot-smart-parking-lot-51ec8",
+    "storage_bucket": "iot-smart-parking-lot-51ec8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:731452417060:android:e0b53125960de5399ca4b1",
+        "android_client_info": {
+          "package_name": "com.example.iot_20241"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "731452417060-tjj1gsbvbt2ml22fnqengt8l4ldt84tn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhbav5G7DlNQnmyJSQF91tiA-0g2h74kw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "731452417060-tjj1gsbvbt2ml22fnqengt8l4ldt84tn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "731452417060-c4tk9ecdt3m2fh2a1bgnbd07hb8av1aq.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.iot20241"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
